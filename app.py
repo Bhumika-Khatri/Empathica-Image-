@@ -5,6 +5,7 @@ from torchvision import models, transforms
 from PIL import Image, ImageOps
 import numpy as np
 import cv2
+import gdown
 from pathlib import Path
 
 # ------------------------------------------------------------
@@ -134,10 +135,21 @@ PREPROCESS = transforms.Compose([
 
 @st.cache_resource(show_spinner="Loading EMPATHICA model…")
 def load_model():
+    # Download the trained model from Google Drive when it is not in the repo.
+    if not MODEL_PATH.exists():
+        try:
+            gdown.download(
+                id="1N28LwypLiqB_PwtsC1AwykfwVcAKmw48",
+                output=str(MODEL_PATH),
+                quiet=False,
+            )
+        except Exception as exc:
+            return None, None, f"Could not download the model from Google Drive: {exc}"
+
     if not MODEL_PATH.exists():
         return None, None, (
-            f"Model file not found: {MODEL_PATH.name}. "
-            "Add EMPATHICA_resnet18.pth to the same GitHub repository as app.py."
+            "Model download failed. In Google Drive, set this file's General access "
+            "to 'Anyone with the link' and try again."
         )
 
     try:
@@ -332,3 +344,4 @@ st.markdown(
     '<p style="text-align:center;color:#829087;font-size:.82rem">EMPATHICA · A student project for emotion-aware interaction<br>Be kind to yourself. An expression is only one small part of a person.</p>',
     unsafe_allow_html=True
 )
+
