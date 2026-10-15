@@ -179,14 +179,19 @@ def load_model():
         )
 
 def crop_largest_face(pil_image):
-    """Return the largest detected face; if none is found, use the full image."""
+    """Try to crop the largest face; safely use the full image if detection is unavailable."""
     rgb = np.array(pil_image.convert("RGB"))
-    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    detector = cv2.CascadeClassifier(cascade_path)
-    faces = detector.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40)
-    )
+    try:
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        detector = cv2.CascadeClassifier(cascade_path)
+        faces = detector.detectMultiScale(
+            gray, scaleFactor=1.1, minNeighbors=5, minSize=(40, 40)
+        )
+    except (AttributeError, cv2.error, Exception):
+        # Some hosted environments have a broken/missing OpenCV face detector.
+        # Do not crash the app; classify the uploaded image instead.
+        return pil_image.convert("RGB"), False
 
     if len(faces) == 0:
         return pil_image.convert("RGB"), False
