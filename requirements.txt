@@ -4,3 +4,4 @@ torchvision>=0.17
 opencv-python-headless>=4.8
 Pillow>=10.0
 numpy>=1.26
+gdown>=5.2
