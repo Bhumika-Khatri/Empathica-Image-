@@ -1,467 +1,279 @@
-import cv2
-import gdown
-import numpy as np
 import streamlit as st
 import torch
 import torch.nn as nn
-
+import numpy as np
+import cv2
+import gdown
 from pathlib import Path
 from PIL import Image, ImageOps
 from torchvision import models, transforms
 
-# ---------------- CONFIGURATION ----------------
-
+# -------------------- APP SETTINGS --------------------
 st.set_page_config(
-    page_title="EMPATHICA",
+    page_title="EMPATHICA | Emotion Support",
     page_icon="🌿",
     layout="wide"
 )
 
 MODEL_PATH = Path(__file__).parent / "EMPATHICA_resnet18.pth"
-DRIVE_FILE_ID = "1N28LwypLiqB_PwtsC1AwykfwVcAKmw48"
-
+GOOGLE_DRIVE_FILE_ID = "1N28LwypLiqB_PwtsC1AwykfwVcAKmw48"
 DEVICE = torch.device("cpu")
 
-EMOTION_RESPONSES = {
+# Supportive, rule-based responses. These are prompts for reflection,
+# not a diagnosis or a claim about what someone is truly feeling.
+RESPONSES = {
     "happy": """
-### ☀️ A Little Space for Positive Moments
+### ☀️ A Positive Moment
+Take a moment to notice what is going well. Happiness can come from a small achievement, a good conversation, a favourite activity, or a little time to yourself.
 
-Take a moment to appreciate the things going well in your life.
-Happiness can come from small achievements, meaningful conversations,
-personal progress, or simply having a peaceful moment.
+**A gentle check-in:**
+- What is one thing I appreciated today?
+- Is there a positive moment I would like to remember or share?
+- What helps me feel balanced and refreshed?
 
-**Questions to reflect on:**
-- What is one good thing that happened today?
-- What activity helps me feel refreshed?
-- Is there someone I would like to share a positive moment with?
-
-Allow yourself to enjoy positive experiences without feeling that
-every day has to be perfect. Remember, a facial expression cannot
-confirm how you actually feel.
+You do not have to feel happy all the time. Allow yourself to enjoy good moments without putting pressure on yourself to keep feeling the same way. Remember, this is only an estimate from an image; it may not match your actual feelings.
 """,
-
     "sad": """
 ### 💙 Be Gentle With Yourself
-
-Everyone experiences difficult or disappointing moments.
-You do not need to figure everything out at once. Give yourself
-permission to pause and understand what you need.
+If you are having a difficult day, you do not need to solve everything at once. Taking a small pause and reaching out to someone you trust may help.
 
 **Things you could try:**
-- Talk to someone you trust.
-- Listen to music you enjoy.
-- Write down your thoughts.
-- Take a comfortable break.
-- Focus on one manageable task at a time.
+- Write down what is on your mind.
+- Listen to music or do a familiar activity you enjoy.
+- Take a comfortable break and return to one small task when ready.
+- Talk with a trusted friend, family member, or counsellor if you want support.
 
-**Ask yourself:**
-- Is something bothering me today?
-- Would I prefer some quiet time or a conversation?
-- What might help me feel supported?
-
-Your feelings deserve patience and understanding. This prediction
-may be incorrect, so trust your own experience.
+**Ask yourself:** What would feel helpful right now: quiet time, practical help, or a conversation? Your own understanding of your feelings matters more than this model's prediction.
 """,
-
     "angry": """
-### 🌿 Pause, Breathe, and Reflect
-
-Sometimes situations can feel frustrating or overwhelming.
-Taking a short pause can help you understand what is happening
-before deciding how to respond.
+### 🌿 Pause and Reflect
+Frustration can happen when something feels unfair, stressful, or different from what you expected. A short pause may give you space to decide how you want to respond.
 
 **You could try:**
 - Taking a few slow, comfortable breaths.
-- Giving yourself time before responding to a difficult situation.
-- Writing down what is bothering you.
-- Explaining your concerns calmly when you feel ready.
+- Stepping away briefly from a stressful conversation if it is safe to do so.
+- Writing down what is bothering you before discussing it.
+- Explaining your concern calmly when you feel ready.
 
-**Reflect on these questions:**
-- What, if anything, is frustrating me?
-- Is there a misunderstanding I could clarify?
-- What response might help improve the situation?
-
-Frustration is a normal human experience. An image cannot tell
-the app what caused an expression or how you really feel.
+**Reflect:** What is within my control? Is there something I need to communicate or clarify? An image cannot explain the reason for an expression, and this prediction may be wrong.
 """,
-
     "fear": """
-### 🤍 Take a Moment to Feel Grounded
-
-Uncertainty can sometimes feel uncomfortable. If you are worried
-about something, it may help to separate what you know from what
-you are imagining might happen.
+### 🤍 A Grounding Check-In
+Uncertainty can sometimes feel uncomfortable. If something is worrying you, it may help to separate what you know from what you are imagining might happen.
 
 **You could try:**
-- Identifying what is concerning you.
-- Focusing on what is within your control.
-- Choosing one small, manageable next step.
-- Speaking with someone you trust.
+- Naming the specific thing that concerns you.
+- Focusing on one small next step you can control.
+- Asking someone you trust for another perspective.
+- Taking a break from information or activities that are making you feel overwhelmed.
 
-**Ask yourself:**
-- Am I feeling worried, uncertain, or something different?
-- What information would help me understand the situation?
-- What might help me feel more comfortable?
-
-A facial expression cannot confirm fear or anxiety.
-Your own feelings and circumstances matter most.
+**Ask yourself:** What information would help me understand the situation better? What might help me feel supported? This model cannot confirm that you are afraid or worried; only you can describe how you feel.
 """,
-
     "disgust": """
-### 🌱 Notice Your Reaction Without Judging It
+### 🌱 Notice Your Reaction
+Sometimes a situation, smell, memory, or experience can make us uncomfortable. You can notice a reaction without judging yourself for it.
 
-Sometimes we react negatively to a situation, an experience,
-or something that makes us uncomfortable. You do not need to
-judge yourself for having a reaction.
+**A few reflection questions:**
+- Is something making me uncomfortable, or could my expression mean something else?
+- Would a short break or a change of surroundings help?
+- Is there more context I need before deciding how I feel about the situation?
 
-**Take a moment to consider:**
-- Is something making me uncomfortable?
-- Is there context that this image cannot show?
-- Would taking a break or changing my surroundings help?
-- Is there another explanation for my expression?
-
-Give yourself time to understand what you are experiencing.
-This model can only estimate a facial expression; it cannot
-know what caused it or how you actually feel.
+Give yourself time to understand your reaction. A facial expression alone cannot tell the app what caused it or what you are experiencing.
 """,
-
     "surprise": """
-### ✨ Make Room for the Unexpected
-
-Surprise can happen when something catches our attention.
-It does not necessarily mean that the experience is positive
-or negative. Sometimes we simply need more time to understand it.
+### ✨ Make Space for the Unexpected
+Something unexpected can catch our attention. Surprise is not necessarily good or bad; sometimes we simply need a little time to understand what happened.
 
 **You could reflect on:**
 - What caught my attention?
-- Did the situation feel pleasant, confusing, or unexpected?
-- Do I need more information before making a decision?
-- What would help me understand what happened?
+- Do I feel pleased, confused, uncertain, or something else?
+- Do I need more information before responding?
+- What is one calm next step I can take?
 
-There is no need to react immediately to every unexpected event.
-Give yourself time to process the situation.
-
-Remember, the app cannot determine your actual feelings from
-a facial expression alone.
+There is no need to decide immediately what an unexpected moment means. This is only a model estimate based on an image, not a reliable reading of your inner feelings.
 """,
-
     "neutral": """
-### 🌼 A Calm, No-Pressure Check-In
-
-A neutral facial expression does not mean that you have no
-emotions. You might be concentrating, thinking, resting, or
-simply expressing yourself naturally.
+### 🌼 A No-Pressure Check-In
+A neutral facial expression does not mean that you have no emotions. You might be concentrating, resting, thinking, or simply expressing yourself naturally.
 
 **Take a moment to check in:**
-- How am I actually feeling right now?
-- Is anything on my mind?
-- Do I need a break, some activity, or a conversation?
-- What would help me with the rest of my day?
+- How would I describe my mood in my own words?
+- Is anything on my mind that needs attention?
+- Would a break, some movement, or a conversation be helpful?
+- What is one manageable thing I want to focus on next?
 
-You do not need to display a particular expression to feel
-a certain way. Your own understanding of your emotions is
-more meaningful than an automated prediction.
+You do not need to display a particular expression to feel a certain way. Your own account of your experience is more meaningful than an automated prediction.
 """
 }
 
-
-# ---------------- LOAD MODEL ----------------
-
-@st.cache_resource
+# -------------------- MODEL LOADING --------------------
+@st.cache_resource(show_spinner=False)
 def load_model():
-
-    # Download the trained model if it is not already present.
+    # Download the checkpoint only if it is not already beside app.py.
     if not MODEL_PATH.exists() or MODEL_PATH.stat().st_size == 0:
-
-        try:
-            result = gdown.download(
-                id=DRIVE_FILE_ID,
-                output=str(MODEL_PATH),
-                quiet=False
-            )
-
-            if (
-                result is None
-                or not MODEL_PATH.exists()
-                or MODEL_PATH.stat().st_size == 0
-            ):
-                raise RuntimeError(
-                    "Download failed. Set Google Drive access to "
-                    "'Anyone with the link'."
-                )
-
-        except Exception as e:
+        result = gdown.download(
+            id=GOOGLE_DRIVE_FILE_ID,
+            output=str(MODEL_PATH),
+            quiet=False
+        )
+        if result is None or not MODEL_PATH.exists() or MODEL_PATH.stat().st_size == 0:
             raise RuntimeError(
-                f"Model download failed: {e}"
+                "Model download failed. Open Google Drive sharing settings and set "
+                "General access to 'Anyone with the link', then redeploy."
             )
 
-    # Load your saved checkpoint.
-    checkpoint = torch.load(
-        str(MODEL_PATH),
-        map_location=DEVICE,
-        weights_only=False
-    )
+    try:
+        checkpoint = torch.load(
+            str(MODEL_PATH),
+            map_location=DEVICE,
+            weights_only=False
+        )
+    except TypeError:
+        # Compatibility with older PyTorch versions.
+        checkpoint = torch.load(str(MODEL_PATH), map_location=DEVICE)
 
-    if not isinstance(checkpoint, dict):
-        raise RuntimeError("Invalid model checkpoint.")
-
-    if "model_state" not in checkpoint:
+    if not isinstance(checkpoint, dict) or "model_state" not in checkpoint:
         raise RuntimeError(
-            "Checkpoint does not contain 'model_state'. "
-            "Use your original EMPATHICA checkpoint."
+            "This file is not the expected checkpoint. It must contain 'model_state'."
         )
 
-    emotions = checkpoint.get("emotions")
+    # Use the saved label order so prediction indexes match training.
+    emotion_labels = checkpoint.get("emotions") or checkpoint.get("classes")
+    if not emotion_labels:
+        raise RuntimeError("No 'emotions' or 'classes' labels were found in the checkpoint.")
 
-    if not emotions:
-        raise RuntimeError(
-            "Emotion labels are missing from the checkpoint."
-        )
+    emotion_labels = [str(label).strip().lower() for label in emotion_labels]
 
-    emotions = [
-        str(emotion).lower().strip()
-        for emotion in emotions
-    ]
-
-    # Recreate the same ResNet18 architecture used in training.
     model = models.resnet18(weights=None)
-
     model.fc = nn.Sequential(
         nn.Dropout(0.5),
-        nn.Linear(
-            model.fc.in_features,
-            len(emotions)
-        )
+        nn.Linear(model.fc.in_features, len(emotion_labels))
     )
-
-    model.load_state_dict(
-        checkpoint["model_state"],
-        strict=True
-    )
-
+    model.load_state_dict(checkpoint["model_state"], strict=True)
     model.to(DEVICE)
     model.eval()
+    return model, emotion_labels
 
-    return model, emotions
-
-
-# ---------------- FACE DETECTION ----------------
-
-def detect_face(image):
-
-    rgb = np.array(image.convert("RGB"))
+# -------------------- IMAGE PREPARATION --------------------
+def prepare_face_or_image(pil_image):
+    """Try to crop a face. If detection fails, return the original image instead of stopping."""
+    rgb = np.array(pil_image.convert("RGB"))
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    cascade_file = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
+    detector = cv2.CascadeClassifier(str(cascade_file))
 
-    cascade_path = (
-        Path(cv2.data.haarcascades)
-        / "haarcascade_frontalface_default.xml"
-    )
-
-    detector = cv2.CascadeClassifier(str(cascade_path))
-
-    if detector.empty():
-        raise RuntimeError(
-            "Face detector could not be loaded. "
-            "Check your requirements.txt."
+    if not detector.empty():
+        faces = detector.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=4,
+            minSize=(30, 30)
         )
+        if len(faces) > 0:
+            x, y, w, h = max(faces, key=lambda item: item[2] * item[3])
+            pad_x = int(w * 0.10)
+            pad_y = int(h * 0.10)
+            x1 = max(0, x - pad_x)
+            y1 = max(0, y - pad_y)
+            x2 = min(rgb.shape[1], x + w + pad_x)
+            y2 = min(rgb.shape[0], y + h + pad_y)
+            crop = rgb[y1:y2, x1:x2]
+            if crop.size > 0:
+                return Image.fromarray(crop), True
 
-    faces = detector.detectMultiScale(
-        gray,
-        scaleFactor=1.1,
-        minNeighbors=5,
-        minSize=(40, 40)
-    )
+    # Fallback: always let the classifier run on the uploaded image.
+    return Image.fromarray(rgb), False
 
-    if len(faces) == 0:
-        return None
-
-    # Select the largest detected face.
-    x, y, w, h = max(
-        faces,
-        key=lambda face: face[2] * face[3]
-    )
-
-    # Add 10% padding around the face.
-    px = int(w * 0.10)
-    py = int(h * 0.10)
-
-    x1 = max(0, x - px)
-    y1 = max(0, y - py)
-    x2 = min(rgb.shape[1], x + w + px)
-    y2 = min(rgb.shape[0], y + h + py)
-
-    cropped_face = rgb[y1:y2, x1:x2]
-
-    return Image.fromarray(cropped_face)
-
-
-# ---------------- EMOTION PREDICTION ----------------
-
-def predict_emotion(face, model, emotions):
-
-    # Keep the same normalization used during evaluation.
+# -------------------- PREDICTION --------------------
+def predict_emotion(image, model, emotion_labels):
+    # Match the ImageNet normalization used in the training/evaluation code.
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize(
-            [0.485, 0.456, 0.406],
-            [0.229, 0.224, 0.225]
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
         )
     ])
-
-    image_tensor = transform(face).unsqueeze(0)
-
+    tensor = transform(image.convert("RGB")).unsqueeze(0).to(DEVICE)
     with torch.inference_mode():
-        output = model(image_tensor)
-        probabilities = torch.softmax(
-            output.float(),
-            dim=1
-        )[0].cpu().numpy()
-
+        logits = model(tensor)
+        probabilities = torch.softmax(logits.float(), dim=1)[0].cpu().numpy()
     best_index = int(np.argmax(probabilities))
+    return emotion_labels[best_index], float(probabilities[best_index]), probabilities
 
-    return (
-        emotions[best_index],
-        float(probabilities[best_index]),
-        probabilities
-    )
-
-
-# ---------------- STREAMLIT INTERFACE ----------------
-
+# -------------------- PAGE DESIGN --------------------
 st.markdown("""
 <style>
-.stApp {
-    background-color: #f5f7f1;
-    color: #26352f;
-}
-.block-container {
-    max-width: 1000px;
-    padding-top: 2rem;
-}
-h1, h2, h3 {
-    color: #365442;
-}
-.stButton > button {
-    background-color: #476650;
-    color: white;
-    border-radius: 10px;
-    border: none;
-    padding: 0.6rem 1rem;
-}
+.stApp { background: #f5f7f1; color: #26352f; }
+.block-container { max-width: 1050px; padding-top: 2rem; padding-bottom: 3rem; }
+h1, h2, h3 { color: #365442; }
+.stButton > button { background: #476650; color: white; border-radius: 10px; border: 0; }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🌿 EMPATHICA")
 st.subheader("Emotion-Aware Emotional Wellness")
-
 st.write(
-    "Upload a clear, front-facing image. EMPATHICA estimates "
-    "a facial expression and provides a supportive, rule-based "
-    "reflection. It cannot confirm a person's actual emotions."
+    "Upload an image to estimate a facial-expression category and receive a supportive, "
+    "rule-based reflection. Facial expressions do not reliably reveal a person's actual emotions."
 )
+st.info("Tip: a clear, well-lit image with your face visible usually works best. If face detection fails, the app will still try the uploaded image.")
 
-uploaded_file = st.file_uploader(
-    "Upload your image",
-    type=["jpg", "jpeg", "png"]
-)
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
-
     try:
-        image = ImageOps.exif_transpose(
-            Image.open(uploaded_file)
-        ).convert("RGB")
+        original_image = ImageOps.exif_transpose(Image.open(uploaded_file)).convert("RGB")
+        st.image(original_image, caption="Uploaded image", use_container_width=True)
 
-        st.image(
-            image,
-            caption="Uploaded image",
-            use_container_width=True
-        )
+        if st.button("✨ Detect Expression", type="primary"):
+            with st.spinner("Loading your model and analysing the image..."):
+                model, emotion_labels = load_model()
+                image_for_prediction, face_found = prepare_face_or_image(original_image)
+                emotion, confidence, probabilities = predict_emotion(
+                    image_for_prediction, model, emotion_labels
+                )
 
-        if st.button("✨ Detect Emotion"):
+            if face_found:
+                st.success("Face detected. Prediction completed.")
+            else:
+                st.warning(
+                    "A face was not detected automatically, so the full uploaded image was used. "
+                    "This may affect accuracy."
+                )
 
-            with st.spinner("Loading model and analysing image..."):
+            st.divider()
+            st.header("Your EMPATHICA Result")
+            left, right = st.columns(2)
+            with left:
+                st.image(
+                    image_for_prediction,
+                    caption="Image used for prediction",
+                    use_container_width=True
+                )
+            with right:
+                st.subheader(f"Estimated expression: {emotion.title()}")
+                st.metric("Model confidence score", f"{confidence * 100:.2f}%")
+                st.caption("Confidence is the model's score, not emotional intensity or certainty about how you feel.")
 
-                model, emotions = load_model()
+            response = RESPONSES.get(
+                emotion,
+                "### 🌼 Check In With Yourself\nTake a moment to notice how you feel in your own words. This model's estimate may be incorrect."
+            )
+            st.markdown(response)
 
-                face = detect_face(image)
+            with st.expander("See the top 3 model predictions"):
+                top_indices = np.argsort(probabilities)[::-1][:3]
+                for idx in top_indices:
+                    label = emotion_labels[int(idx)]
+                    value = float(probabilities[int(idx)])
+                    st.write(f"**{label.title()} — {value * 100:.2f}%**")
+                    st.progress(value)
 
-                if face is None:
-                    st.warning(
-                        "No face detected. Please upload a clear, "
-                        "front-facing image with one visible face."
-                    )
-
-                else:
-                    emotion, score, probabilities = predict_emotion(
-                        face,
-                        model,
-                        emotions
-                    )
-
-                    st.divider()
-                    st.header("Your EMPATHICA Result")
-
-                    col1, col2 = st.columns(2)
-
-                    with col1:
-                        st.image(
-                            face,
-                            caption="Face used for prediction",
-                            use_container_width=True
-                        )
-
-                    with col2:
-                        st.subheader(
-                            f"Detected expression: {emotion.title()}"
-                        )
-
-                        st.metric(
-                            "Model confidence score",
-                            f"{score * 100:.2f}%"
-                        )
-
-                        st.caption(
-                            "This score is the model's output, "
-                            "not a measure of emotional intensity."
-                        )
-
-                    st.subheader("Supportive Reflection")
-
-                    response = EMOTION_RESPONSES.get(
-                        emotion,
-                        "Take a moment to check in with yourself. "
-                        "The model's prediction may not match "
-                        "how you actually feel."
-                    )
-
-                    st.markdown(response)
-
-                    with st.expander("View top model predictions"):
-
-                        top_indices = np.argsort(
-                            probabilities
-                        )[::-1][:3]
-
-                        for index in top_indices:
-                            label = emotions[int(index)]
-                            value = float(probabilities[int(index)])
-
-                            st.write(
-                                f"**{label.title()}** — "
-                                f"{value * 100:.2f}%"
-                            )
-
-                            st.progress(value)
-
-    except Exception as e:
-        st.error(f"Something went wrong: {e}")
+    except Exception as error:
+        st.error(f"The app could not complete the prediction: {error}")
+        st.caption("Check that the Google Drive model is shared with anyone who has the link and that the checkpoint matches the ResNet18 architecture used during training.")
 
 st.divider()
-
-st.caption(
-    "EMPATHICA is a student project. Facial-expression predictions "
-    "can be incorrect and are not a diagnosis. Your own account "
-    "of your feelings matters most."
-)
+st.caption("EMPATHICA is a student project for reflection and learning. It is not a mental-health diagnosis or a substitute for professional support.")
