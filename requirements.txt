@@ -1,0 +1,6 @@
+streamlit>=1.35,<2.0
+torch>=2.2
+torchvision>=0.17
+opencv-python-headless>=4.8
+Pillow>=10.0
+numpy>=1.26
